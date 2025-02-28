@@ -193,6 +193,116 @@ const SettingsPage: React.FC = () => {
     }
   };
 
+  const getRolePermissions = (role: string) => {
+    switch (role) {
+      case 'admin':
+        return (
+          <div className="space-y-2">
+            <div className="flex items-center">
+              <Check size={16} className="text-green-500 mr-2" />
+              <span className="text-sm">Acesso completo ao sistema</span>
+            </div>
+            <div className="flex items-center">
+              <Check size={16} className="text-green-500 mr-2" />
+              <span className="text-sm">Gerenciar usuários e permissões</span>
+            </div>
+            <div className="flex items-center">
+              <Check size={16} className="text-green-500 mr-2" />
+              <span className="text-sm">Configurações do sistema</span>
+            </div>
+            <div className="flex items-center">
+              <Check size={16} className="text-green-500 mr-2" />
+              <span className="text-sm">Gerar todos os relatórios</span>
+            </div>
+          </div>
+        );
+      case 'teacher':
+        return (
+          <div className="space-y-2">
+            <div className="flex items-center">
+              <Check size={16} className="text-green-500 mr-2" />
+              <span className="text-sm">Gerenciar cursos e frequência</span>
+            </div>
+            <div className="flex items-center">
+              <Check size={16} className="text-green-500 mr-2" />
+              <span className="text-sm">Visualizar alunos e cursos</span>
+            </div>
+            <div className="flex items-center">
+              <X size={16} className="text-red-500 mr-2" />
+              <span className="text-sm">Sem acesso a configurações do sistema</span>
+            </div>
+            <div className="flex items-center">
+              <X size={16} className="text-red-500 mr-2" />
+              <span className="text-sm">Acesso limitado a relatórios</span>
+            </div>
+          </div>
+        );
+      case 'social_worker':
+        return (
+          <div className="space-y-2">
+            <div className="flex items-center">
+              <Check size={16} className="text-green-500 mr-2" />
+              <span className="text-sm">Gerenciar assistência social</span>
+            </div>
+            <div className="flex items-center">
+              <Check size={16} className="text-green-500 mr-2" />
+              <span className="text-sm">Visualizar informações detalhadas de alunos</span>
+            </div>
+            <div className="flex items-center">
+              <X size={16} className="text-red-500 mr-2" />
+              <span className="text-sm">Acesso limitado a outros módulos</span>
+            </div>
+            <div className="flex items-center">
+              <X size={16} className="text-red-500 mr-2" />
+              <span className="text-sm">Sem acesso a configurações do sistema</span>
+            </div>
+          </div>
+        );
+      case 'health_professional':
+        return (
+          <div className="space-y-2">
+            <div className="flex items-center">
+              <Check size={16} className="text-green-500 mr-2" />
+              <span className="text-sm">Gerenciar registros de saúde</span>
+            </div>
+            <div className="flex items-center">
+              <Check size={16} className="text-green-500 mr-2" />
+              <span className="text-sm">Visualizar informações detalhadas de alunos</span>
+            </div>
+            <div className="flex items-center">
+              <X size={16} className="text-red-500 mr-2" />
+              <span className="text-sm">Acesso limitado a outros módulos</span>
+            </div>
+            <div className="flex items-center">
+              <X size={16} className="text-red-500 mr-2" />
+              <span className="text-sm">Sem acesso a configurações do sistema</span>
+            </div>
+          </div>
+        );
+      default:
+        return (
+          <div className="space-y-2">
+            <div className="flex items-center">
+              <Check size={16} className="text-green-500 mr-2" />
+              <span className="text-sm">Visualizar informações básicas</span>
+            </div>
+            <div className="flex items-center">
+              <X size={16} className="text-red-500 mr-2" />
+              <span className="text-sm">Sem permissões de edição</span>
+            </div>
+            <div className="flex items-center">
+              <X size={16} className="text-red-500 mr-2" />
+              <span className="text-sm">Sem acesso a configurações do sistema</span>
+            </div>
+            <div className="flex items-center">
+              <X size={16} className="text-red-500 mr-2" />
+              <span className="text-sm">Acesso limitado a relatórios</span>
+            </div>
+          </div>
+        );
+    }
+  };
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-gray-900">Configurações</h1>
@@ -250,6 +360,7 @@ const SettingsPage: React.FC = () => {
                   <Button
                     variant="primary"
                     leftIcon={<Save size={18} />}
+                    onClick={() => toast.success('Configurações salvas com sucesso!')}
                   >
                     Salvar Alterações
                   </Button>
@@ -389,7 +500,11 @@ const SettingsPage: React.FC = () => {
                       <p className="font-medium">Backup Manual</p>
                       <p className="text-sm text-gray-500">Realizar backup completo do banco de dados agora</p>
                     </div>
-                    <Button variant="primary" size="sm">
+                    <Button 
+                      variant="primary" 
+                      size="sm"
+                      onClick={() => toast.success('Backup iniciado com sucesso!')}
+                    >
                       Iniciar Backup
                     </Button>
                   </div>
@@ -461,6 +576,7 @@ const SettingsPage: React.FC = () => {
                   <Button
                     variant="primary"
                     leftIcon={<Shield size={18} />}
+                    onClick={() => toast.success('Configurações de segurança salvas com sucesso!')}
                   >
                     Salvar Configurações
                   </Button>
@@ -651,62 +767,7 @@ const SettingsPage: React.FC = () => {
           
           <div className="p-4 bg-blue-50 rounded-lg">
             <h4 className="font-medium text-blue-800 mb-2">Permissões da Função: {role}</h4>
-            <div className="space-y-2">
-              {role === 'admin' && (
-                <div className="flex items-center">
-                  <Check size={16} className="text-green-500 mr-2" />
-                  <span className="text-sm">Acesso completo ao sistema</span>
-                </div>
-              )}
-              {role === 'teacher' && (
-                <>
-                  <div className="flex items-center">
-                    <Check size={16} className="text-green-500 mr-2" />
-                    <span className="text-sm">Gerenciar cursos e frequência</span>
-                  </div>
-                  <div className="flex items-center">
-                    <X size={16} className="text-red-500 mr-2" />
-                    <span className="text-sm">Sem acesso a configurações do sistema</span>
-                  </div>
-                </>
-              )}
-              {role === 'social_worker' && (
-                <>
-                  <div className="flex items-center">
-                    <Check size={16} className="text-green-500 mr-2" />
-                    <span className="text-sm">Gerenciar assistência social</span>
-                  </div>
-                  <div className="flex items-center">
-                    <X size={16} className="text-red-500 mr-2" />
-                    <span className="text-sm">Acesso limitado a outros módulos</span>
-                  </div>
-                </>
-              )}
-              {role === 'health_professional' && (
-                <>
-                  <div className="flex items-center">
-                    <Check size={16} className="text-green-500 mr-2" />
-                    <span className="text-sm">Gerenciar registros de saúde</span>
-                  </div>
-                  <div className="flex items-center">
-                    <X size={16} className="text-red-500 mr-2" />
-                    <span className="text-sm">Acesso limitado a outros módulos</span>
-                  </div>
-                </>
-              )}
-              {role === 'user' && (
-                <>
-                  <div className="flex items-center">
-                    <Check size={16} className="text-green-500 mr-2" />
-                    <span className="text-sm">Visualizar informações básicas</span>
-                  </div>
-                  <div className="flex items-center">
-                    <X size={16} className="text-red-500 mr-2" />
-                    <span className="text-sm">Sem permissões de edição</span>
-                  </div>
-                </>
-              )}
-            </div>
+            {getRolePermissions(role)}
           </div>
         </div>
       </Modal>

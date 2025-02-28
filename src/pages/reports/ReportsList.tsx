@@ -8,6 +8,8 @@ import { supabase } from '../../lib/supabase';
 import { toast } from 'react-toastify';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, Title } from 'chart.js';
 import { Pie, Bar } from 'react-chartjs-2';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 
 // Register ChartJS components
 ChartJS.register(ArcElement, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
@@ -339,85 +341,223 @@ const ReportsList: React.FC = () => {
     setDownloading(true);
     
     try {
-      // Create report content
-      let reportContent = `# ${reportData.title}\n\n`;
-      reportContent += `${reportData.description}\n\n`;
-      reportContent += `Data de geração: ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR')}\n\n`;
+      // Create PDF document
+      const doc = new jsPDF();
       
-      // Add summary data based on report type
+      // Add title and description
+      doc.setFontSize(18);
+      doc.text(reportData.title, 14, 20);
+      
+      doc.setFontSize(12);
+      doc.text(reportData.description, 14, 30);
+      doc.text(`Data de geração: ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR')}`, 14, 40);
+      
+      // Add content based on report type
       switch (selectedReport.type) {
         case 'student-status':
-          reportContent += `## Resumo\n\n`;
-          reportContent += `Total de alunos: ${reportData.summary?.total || 0}\n`;
-          reportContent += `Alunos ativos: ${reportData.summary?.statusCounts.active || 0}\n`;
-          reportContent += `Alunos trancados: ${reportData.summary?.statusCounts.locked || 0}\n`;
-          reportContent += `Alunos concluídos: ${reportData.summary?.statusCounts.completed || 0}\n\n`;
+          // Add summary
+          doc.setFontSize(14);
+          doc.text('Resumo', 14, 55);
           
-          reportContent += `## Distribuição por Idade\n\n`;
-          reportContent += `Até 12 anos: ${reportData.summary?.ageGroups.under12 || 0}\n`;
-          reportContent += `13 a 17 anos: ${reportData.summary?.ageGroups.teens || 0}\n`;
-          reportContent += `18 anos ou mais: ${reportData.summary?.ageGroups.adults || 0}\n\n`;
+          doc.setFontSize(10);
+          doc.text(`Total de alunos: ${reportData.summary?.total || 0}`, 14, 65);
+          doc.text(`Alunos ativos: ${reportData.summary?.statusCounts.active || 0}`, 14, 70);
+          doc.text(`Alunos trancados: ${reportData.summary?.statusCounts.locked || 0}`, 14, 75);
+          doc.text(`Alunos concluídos: ${reportData.summary?.statusCounts.completed || 0}`, 14, 80);
           
-          reportContent += `## Dados Detalhados\n\n`;
-          reportContent += `| Aluno | CPF | Idade | Curso | Status |\n`;
-          reportContent += `| ----- | --- | ----- | ----- | ------ |\n`;
+          // Add age distribution
+          doc.setFontSize(14);
+          doc.text('Distribuição por Idade', 14, 95);
           
-          reportData.data.forEach((item: any) => {
-            const status = item.status === 'active' ? 'Ativo' : 
-                          item.status === 'locked' ? 'Trancado' : 'Concluído';
-            reportContent += `| ${item.student.full_name} | ${item.student.cpf} | ${item.student.age} | ${item.course.name} | ${status} |\n`;
+          doc.setFontSize(10);
+          doc.text(`Até 12 anos: ${reportData.summary?.ageGroups.under12 || 0}`, 14, 105);
+          doc.text(`13 a 17 anos: ${reportData.summary?.ageGroups.teens || 0}`, 14, 110);
+          doc.text(`18 anos ou mais: ${reportData.summary?.ageGroups.adults || 0}`, 14, 115);
+          
+          // Add detailed data table
+          doc.setFontSize(14);
+          doc.text('Dados Detalhados', 14, 130);
+          
+          // @ts-ignore
+          doc.autoTable({
+            startY: 135,
+            head: [['Aluno', 'CPF', 'Idade', 'Curso', 'Status']],
+            body: reportData.data.map((item: any) => {
+              const status = item.status === 'active' ? 'Ativo' : 
+                            item.status === 'locked' ? 'Trancado' : 'Concluído';
+              return [
+                item.student.full_name,
+                item.student.cpf,
+                item.student.age,
+                item.course.name,
+                status
+              ];
+            }),
           });
           break;
           
         case 'student-distribution':
         case 'course-students':
-          reportContent += `## Resumo\n\n`;
-          reportContent += `Total de alunos: ${reportData.summary?.totalStudents || 0}\n`;
-          reportContent += `Total de cursos: ${reportData.summary?.totalCourses || 0}\n`;
-          reportContent += `Média de alunos por curso: ${reportData.summary?.totalStudents && reportData.summary?.totalCourses ? 
-            Math.round(reportData.summary.totalStudents / reportData.summary.totalCourses) : 0}\n\n`;
+          // Add summary
+          doc.setFontSize(14);
+          doc.text('Resumo', 14, 55);
           
-          reportContent += `## Distribuição de Alunos por Curso\n\n`;
-          reportContent += `| Curso | Quantidade de Alunos | Percentual |\n`;
-          reportContent += `| ----- | -------------------- | ---------- |\n`;
+          doc.setFontSize(10);
+          doc.text(`Total de alunos: ${reportData.summary?.totalStudents || 0}`, 14, 65);
+          doc.text(`Total de cursos: ${reportData.summary?.totalCourses || 0}`, 14, 70);
+          const avgStudents = reportData.summary?.totalStudents && reportData.summary?.totalCourses ? 
+            Math.round(reportData.summary.totalStudents / reportData.summary.totalCourses) : 0;
+          doc.text(`Média de alunos por curso: ${avgStudents}`, 14, 75);
           
-          reportData.data.forEach((item: any) => {
-            const percentage = reportData.summary?.totalStudents ? 
-              Math.round((item.student_count / reportData.summary.totalStudents) * 100) : 0;
-            reportContent += `| ${item.course_name} | ${item.student_count} | ${percentage}% |\n`;
+          // Add detailed data table
+          doc.setFontSize(14);
+          doc.text('Distribuição de Alunos por Curso', 14, 90);
+          
+          // @ts-ignore
+          doc.autoTable({
+            startY: 95,
+            head: [['Curso', 'Quantidade de Alunos', 'Percentual']],
+            body: reportData.data.map((item: any) => {
+              const percentage = reportData.summary?.totalStudents ? 
+                Math.round((item.student_count / reportData.summary.totalStudents) * 100) : 0;
+              return [
+                item.course_name,
+                item.student_count,
+                `${percentage}%`
+              ];
+            }),
           });
           break;
           
         case 'attendance-trend':
-          reportContent += `## Resumo\n\n`;
-          reportContent += `Média de frequência: ${reportData.summary?.averageAttendance || '0%'}\n`;
-          reportContent += `Tendência: ${reportData.summary?.trend === 'increasing' ? 'Crescente' : 
-                          reportData.summary?.trend === 'decreasing' ? 'Decrescente' : 'Estável'}\n\n`;
+          // Add summary
+          doc.setFontSize(14);
+          doc.text('Resumo', 14, 55);
           
-          reportContent += `## Dados de Frequência por Data\n\n`;
-          reportContent += `| Data | Taxa de Frequência |\n`;
-          reportContent += `| ---- | ----------------- |\n`;
+          doc.setFontSize(10);
+          doc.text(`Média de frequência: ${reportData.summary?.averageAttendance || '0%'}`, 14, 65);
+          const trendText = reportData.summary?.trend === 'increasing' ? 'Crescente' : 
+                          reportData.summary?.trend === 'decreasing' ? 'Decrescente' : 'Estável';
+          doc.text(`Tendência: ${trendText}`, 14, 70);
           
-          reportData.data.forEach((item: any) => {
-            reportContent += `| ${new Date(item.date).toLocaleDateString('pt-BR')} | ${item.attendance}% |\n`;
+          // Add detailed data table
+          doc.setFontSize(14);
+          doc.text('Dados de Frequência por Data', 14, 85);
+          
+          // @ts-ignore
+          doc.autoTable({
+            startY: 90,
+            head: [['Data', 'Taxa de Frequência']],
+            body: reportData.data.map((item: any) => [
+              new Date(item.date).toLocaleDateString('pt-BR'),
+              `${item.attendance}%`
+            ]),
           });
           break;
           
+        case 'social-type':
+        case 'social-needs':
+          if (reportData.summary?.needCounts) {
+            // Add detailed data table
+            doc.setFontSize(14);
+            doc.text('Necessidades Identificadas', 14, 55);
+            
+            const needEntries = Object.entries(reportData.summary.needCounts);
+            const total = Object.values(reportData.summary.needCounts).reduce((sum: any, val: any) => sum + val, 0);
+            
+            // @ts-ignore
+            doc.autoTable({
+              startY: 60,
+              head: [['Necessidade', 'Ocorrências', 'Percentual']],
+              body: needEntries.map(([need, count]) => {
+                const percentage = Math.round((count as number / total) * 100);
+                return [need, count, `${percentage}%`];
+              }),
+            });
+          }
+          break;
+          
+        case 'social-referrals':
+          // Add summary
+          doc.setFontSize(14);
+          doc.text('Resumo', 14, 55);
+          
+          doc.setFontSize(10);
+          doc.text(`Total de encaminhamentos: ${reportData.summary?.totalReferrals || 0}`, 14, 65);
+          
+          // Add detailed data table
+          doc.setFontSize(14);
+          doc.text('Encaminhamentos Realizados', 14, 80);
+          
+          // @ts-ignore
+          doc.autoTable({
+            startY: 85,
+            head: [['Tipo de Encaminhamento', 'Quantidade', 'Percentual']],
+            body: reportData.data.map((item: any) => {
+              const percentage = reportData.summary?.totalReferrals ? 
+                Math.round((item.count / reportData.summary.totalReferrals) * 100) : 0;
+              return [
+                item.type,
+                item.count,
+                `${percentage}%`
+              ];
+            }),
+          });
+          break;
+          
+        case 'health-specialty':
+          if (reportData.summary?.typeCounts) {
+            // Add detailed data table
+            doc.setFontSize(14);
+            doc.text('Atendimentos por Especialidade', 14, 55);
+            
+            const total = 
+              (reportData.summary.typeCounts.dental || 0) + 
+              (reportData.summary.typeCounts.psychological || 0) + 
+              (reportData.summary.typeCounts.nutritional || 0) + 
+              (reportData.summary.typeCounts.medical || 0);
+            
+            const specialtyData = [
+              { name: 'Odontológico', value: reportData.summary.typeCounts.dental || 0 },
+              { name: 'Psicológico', value: reportData.summary.typeCounts.psychological || 0 },
+              { name: 'Nutricional', value: reportData.summary.typeCounts.nutritional || 0 },
+              { name: 'Médico', value: reportData.summary.typeCounts.medical || 0 }
+            ];
+            
+            // @ts-ignore
+            doc.autoTable({
+              startY: 60,
+              head: [['Especialidade', 'Quantidade', 'Percentual']],
+              body: specialtyData.map(item => {
+                const percentage = total > 0 ? Math.round((item.value / total) * 100) : 0;
+                return [
+                  item.name,
+                  item.value,
+                  `${percentage}%`
+                ];
+              }),
+            });
+          }
+          break;
+          
         default:
-          reportContent += `## Dados do Relatório\n\n`;
-          reportContent += JSON.stringify(reportData.data, null, 2);
+          // Generic data table
+          doc.setFontSize(14);
+          doc.text('Dados do Relatório', 14, 55);
+          
+          // @ts-ignore
+          doc.autoTable({
+            startY: 60,
+            head: [['ID', 'Valor']],
+            body: reportData.data.map((item: any) => [
+              item.id,
+              item.value
+            ]),
+          });
       }
       
-      // Create blob and download
-      const blob = new Blob([reportContent], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${reportData.title.replace(/\s+/g, '_').toLowerCase()}_${new Date().toISOString().split('T')[0]}.md`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      // Save the PDF
+      doc.save(`${reportData.title.replace(/\s+/g, '_').toLowerCase()}_${new Date().toISOString().split('T')[0]}.pdf`);
       
       toast.success('Relatório baixado com sucesso!');
       setReportModalOpen(false);
@@ -762,7 +902,7 @@ const ReportsList: React.FC = () => {
               onClick={handleDownloadReport}
               isLoading={downloading}
             >
-              Baixar Relatório
+              Baixar Relatório (PDF)
             </Button>
           </div>
         }
@@ -889,7 +1029,7 @@ const ReportsList: React.FC = () => {
                         <tr>
                           <td className="px-3 py-2 whitespace-nowrap text-sm">13 a 17 anos</td>
                           <td className="px-3 py-2 whitespace-nowrap text-sm">{reportData?.summary?.ageGroups.teens || 0}</td>
-                          <td className="px-3 py-2 whitespace-nowrap text-sm">50%</td>
+                          <td className="px-3 py-2 whitespace-nowrap text-sm">50 %</td>
                         </tr>
                         <tr>
                           <td className="px-3 py-2 whitespace-nowrap text-sm">18 anos ou mais</td>
@@ -996,7 +1136,7 @@ const ReportsList: React.FC = () => {
                           return (
                             <tr key={index}>
                               <td className="px-3 py-2 whitespace-nowrap text-sm">{need}</td>
-                              <td className="px-3  py-2 whitespace-nowrap text-sm">{count}</td>
+                              <td className="px-3 py-2 whitespace-nowrap text-sm">{count}</td>
                               <td className="px-3 py-2 whitespace-nowrap text-sm">{percentage}%</td>
                             </tr>
                           );
