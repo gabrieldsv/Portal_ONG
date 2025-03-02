@@ -8,6 +8,8 @@ import { supabase } from '../../lib/supabase';
 import { toast } from 'react-toastify';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, Title } from 'chart.js';
 import { Pie, Bar } from 'react-chartjs-2';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 // Register ChartJS components
 ChartJS.register(ArcElement, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
@@ -339,85 +341,253 @@ const ReportsList: React.FC = () => {
     setDownloading(true);
     
     try {
-      // Create report content
-      let reportContent = `# ${reportData.title}\n\n`;
-      reportContent += `${reportData.description}\n\n`;
-      reportContent += `Data de geração: ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR')}\n\n`;
+      // Create PDF document
+      const doc = new jsPDF();
       
-      // Add summary data based on report type
+      // Add title and description
+      doc.setFontSize(18);
+      doc.text(reportData.title, 14, 20);
+      
+      doc.setFontSize(12);
+      doc.text(reportData.description, 14, 30);
+      doc.text(`Data de geração: ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR')}`, 14, 40);
+      
+      // Add content based on report type
+      let yPosition = 50;
+      
       switch (selectedReport.type) {
         case 'student-status':
-          reportContent += `## Resumo\n\n`;
-          reportContent += `Total de alunos: ${reportData.summary?.total || 0}\n`;
-          reportContent += `Alunos ativos: ${reportData.summary?.statusCounts.active || 0}\n`;
-          reportContent += `Alunos trancados: ${reportData.summary?.statusCounts.locked || 0}\n`;
-          reportContent += `Alunos concluídos: ${reportData.summary?.statusCounts.completed || 0}\n\n`;
+          // Add summary section
+          doc.setFontSize(14);
+          doc.text('Resumo', 14, yPosition);
+          yPosition += 10;
           
-          reportContent += `## Distribuição por Idade\n\n`;
-          reportContent += `Até 12 anos: ${reportData.summary?.ageGroups.under12 || 0}\n`;
-          reportContent += `13 a 17 anos: ${reportData.summary?.ageGroups.teens || 0}\n`;
-          reportContent += `18 anos ou mais: ${reportData.summary?.ageGroups.adults || 0}\n\n`;
+          doc.setFontSize(10);
+          doc.text(`Total de alunos: ${reportData.summary?.total || 0}`, 14, yPosition);
+          yPosition += 6;
+          doc.text(`Alunos ativos: ${reportData.summary?.statusCounts.active || 0}`, 14, yPosition);
+          yPosition += 6;
+          doc.text(`Alunos trancados: ${reportData.summary?.statusCounts.locked || 0}`, 14, yPosition);
+          yPosition += 6;
+          doc.text(`Alunos concluídos: ${reportData.summary?.statusCounts.completed || 0}`, 14, yPosition);
+          yPosition += 10;
           
-          reportContent += `## Dados Detalhados\n\n`;
-          reportContent += `| Aluno | CPF | Idade | Curso | Status |\n`;
-          reportContent += `| ----- | --- | ----- | ----- | ------ |\n`;
+          // Add age distribution section
+          doc.setFontSize(14);
+          doc.text('Distribuição por Idade', 14, yPosition);
+          yPosition += 10;
           
-          reportData.data.forEach((item: any) => {
+          doc.setFontSize(10);
+          doc.text(`Até 12 anos: ${reportData.summary?.ageGroups.under12 || 0}`, 14, yPosition);
+          yPosition += 6;
+          doc.text(`13 a 17 anos: ${reportData.summary?.ageGroups.teens || 0}`, 14, yPosition);
+          yPosition += 6;
+          doc.text(`18 anos ou mais: ${reportData.summary?.ageGroups.adults || 0}`, 14, yPosition);
+          yPosition += 10;
+          
+          // Add detailed data table
+          doc.setFontSize(14);
+          doc.text('Dados Detalhados', 14, yPosition);
+          yPosition += 10;
+          
+          const studentStatusData = reportData.data.map((item: any) => {
             const status = item.status === 'active' ? 'Ativo' : 
                           item.status === 'locked' ? 'Trancado' : 'Concluído';
-            reportContent += `| ${item.student.full_name} | ${item.student.cpf} | ${item.student.age} | ${item.course.name} | ${status} |\n`;
+            return [
+              item.student.full_name,
+              item.student.cpf,
+              item.student.age,
+              item.course.name,
+              status
+            ];
+          });
+          
+          autoTable(doc, {
+            startY: yPosition,
+            head: [['Aluno', 'CPF', 'Idade', 'Curso', 'Status']],
+            body: studentStatusData,
           });
           break;
           
         case 'student-distribution':
         case 'course-students':
-          reportContent += `## Resumo\n\n`;
-          reportContent += `Total de alunos: ${reportData.summary?.totalStudents || 0}\n`;
-          reportContent += `Total de cursos: ${reportData.summary?.totalCourses || 0}\n`;
-          reportContent += `Média de alunos por curso: ${reportData.summary?.totalStudents && reportData.summary?.totalCourses ? 
-            Math.round(reportData.summary.totalStudents / reportData.summary.totalCourses) : 0}\n\n`;
+          // Add summary section
+          doc.setFontSize(14);
+          doc.text('Resumo', 14, yPosition);
+          yPosition += 10;
           
-          reportContent += `## Distribuição de Alunos por Curso\n\n`;
-          reportContent += `| Curso | Quantidade de Alunos | Percentual |\n`;
-          reportContent += `| ----- | -------------------- | ---------- |\n`;
+          doc.setFontSize(10);
+          doc.text(`Total de alunos: ${reportData.summary?.totalStudents || 0}`, 14, yPosition);
+          yPosition += 6;
+          doc.text(`Total de cursos: ${reportData.summary?.totalCourses || 0}`, 14, yPosition);
+          yPosition += 6;
           
-          reportData.data.forEach((item: any) => {
+          const avgStudents = reportData.summary?.totalStudents && reportData.summary?.totalCourses ? 
+            Math.round(reportData.summary.totalStudents / reportData.summary.totalCourses) : 0;
+          
+          doc.text(`Média de alunos por curso: ${avgStudents}`, 14, yPosition);
+          yPosition += 10;
+          
+          // Add distribution table
+          doc.setFontSize(14);
+          doc.text('Distribuição de Alunos por Curso', 14, yPosition);
+          yPosition += 10;
+          
+          const distributionData = reportData.data.map((item: any) => {
             const percentage = reportData.summary?.totalStudents ? 
               Math.round((item.student_count / reportData.summary.totalStudents) * 100) : 0;
-            reportContent += `| ${item.course_name} | ${item.student_count} | ${percentage}% |\n`;
+            return [
+              item.course_name,
+              item.student_count,
+              `${percentage}%`
+            ];
+          });
+          
+          autoTable(doc, {
+            startY: yPosition,
+            head: [['Curso', 'Quantidade de Alunos', 'Percentual']],
+            body: distributionData,
           });
           break;
           
         case 'attendance-trend':
-          reportContent += `## Resumo\n\n`;
-          reportContent += `Média de frequência: ${reportData.summary?.averageAttendance || '0%'}\n`;
-          reportContent += `Tendência: ${reportData.summary?.trend === 'increasing' ? 'Crescente' : 
-                          reportData.summary?.trend === 'decreasing' ? 'Decrescente' : 'Estável'}\n\n`;
+          // Add summary section
+          doc.setFontSize(14);
+          doc.text('Resumo', 14, yPosition);
+          yPosition += 10;
           
-          reportContent += `## Dados de Frequência por Data\n\n`;
-          reportContent += `| Data | Taxa de Frequência |\n`;
-          reportContent += `| ---- | ----------------- |\n`;
+          doc.setFontSize(10);
+          doc.text(`Média de frequência: ${reportData.summary?.averageAttendance || '0%'}`, 14, yPosition);
+          yPosition += 6;
           
-          reportData.data.forEach((item: any) => {
-            reportContent += `| ${new Date(item.date).toLocaleDateString('pt-BR')} | ${item.attendance}% |\n`;
+          const trendText = reportData.summary?.trend === 'increasing' ? 'Crescente' : 
+                          reportData.summary?.trend === 'decreasing' ? 'Decrescente' : 'Estável';
+          
+          doc.text(`Tendência: ${trendText}`, 14, yPosition);
+          yPosition += 10;
+          
+          // Add attendance data table
+          doc.setFontSize(14);
+          doc.text('Dados de Frequência por Data', 14, yPosition);
+          yPosition += 10;
+          
+          const attendanceData = reportData.data.map((item: any) => [
+            new Date(item.date).toLocaleDateString('pt-BR'),
+            `${item.attendance}%`
+          ]);
+          
+          autoTable(doc, {
+            startY: yPosition,
+            head: [['Data', 'Taxa de Frequência']],
+            body: attendanceData,
           });
           break;
           
+        case 'social-type':
+        case 'social-needs':
+          if (reportData.summary?.needCounts) {
+            // Add needs table
+            doc.setFontSize(14);
+            doc.text('Necessidades Identificadas', 14, yPosition);
+            yPosition += 10;
+            
+            const needsData = Object.entries(reportData.summary.needCounts).map(([need, count]) => {
+              const total = Object.values(reportData.summary.needCounts).reduce((sum: any, val: any) => sum + val, 0);
+              const percentage = Math.round((count as number / total) * 100);
+              
+              return [need, count, `${percentage}%`];
+            });
+            
+            autoTable(doc, {
+              startY: yPosition,
+              head: [['Necessidade', 'Ocorrências', 'Percentual']],
+              body: needsData,
+            });
+          }
+          break;
+          
+        case 'social-referrals':
+          // Add summary
+          doc.setFontSize(14);
+          doc.text('Encaminhamentos Realizados', 14, yPosition);
+          yPosition += 10;
+          
+          doc.setFontSize(10);
+          doc.text(`Total de encaminhamentos: ${reportData.summary?.totalReferrals || 0}`, 14, yPosition);
+          yPosition += 10;
+          
+          // Add referrals table
+          const referralsData = reportData.data.map((item: any) => {
+            const percentage = reportData.summary?.totalReferrals ? 
+              Math.round((item.count / reportData.summary.totalReferrals) * 100) : 0;
+            
+            return [item.type, item.count, `${percentage}%`];
+          });
+          
+          autoTable(doc, {
+            startY: yPosition,
+            head: [['Tipo de Encaminhamento', 'Quantidade', 'Percentual']],
+            body: referralsData,
+          });
+          break;
+          
+        case 'health-specialty':
+          if (reportData.summary?.typeCounts) {
+            // Add health records table
+            doc.setFontSize(14);
+            doc.text('Atendimentos por Especialidade', 14, yPosition);
+            yPosition += 10;
+            
+            const specialtyData = [
+              { name: 'Odontológico', value: reportData.summary.typeCounts.dental || 0 },
+              { name: 'Psicológico', value: reportData.summary.typeCounts.psychological || 0 },
+              { name: 'Nutricional', value: reportData.summary.typeCounts.nutritional || 0 },
+              { name: 'Médico', value: reportData.summary.typeCounts.medical || 0 }
+            ].map(item => {
+              const total = 
+                (reportData.summary.typeCounts.dental || 0) + 
+                (reportData.summary.typeCounts.psychological || 0) + 
+                (reportData.summary.typeCounts.nutritional || 0) + 
+                (reportData.summary.typeCounts.medical || 0);
+              
+              const percentage = total > 0 ? Math.round((item.value / total) * 100) : 0;
+              
+              return [item.name, item.value, `${percentage}%`];
+            });
+            
+            autoTable(doc, {
+              startY: yPosition,
+              head: [['Especialidade', 'Quantidade', 'Percentual']],
+              body: specialtyData,
+            });
+          }
+          break;
+          
         default:
-          reportContent += `## Dados do Relatório\n\n`;
-          reportContent += JSON.stringify(reportData.data, null, 2);
+          // Generic data
+          doc.setFontSize(14);
+          doc.text('Dados do Relatório', 14, yPosition);
+          yPosition += 10;
+          
+          doc.setFontSize(10);
+          doc.text(JSON.stringify(reportData.data, null, 2), 14, yPosition);
       }
       
-      // Create blob and download
-      const blob = new Blob([reportContent], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${reportData.title.replace(/\s+/g, '_').toLowerCase()}_${new Date().toISOString().split('T')[0]}.md`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      // Add footer
+      const pageCount = doc.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.text(
+          `ONG Amar Sem Limites - Página ${i} de ${pageCount}`,
+          doc.internal.pageSize.getWidth() / 2,
+          doc.internal.pageSize.getHeight() - 10,
+          { align: 'center' }
+        );
+      }
+      
+      // Save the PDF
+      doc.save(`${reportData.title.replace(/\s+/g, '_').toLowerCase()}_${new Date().toISOString().split('T')[0]}.pdf`);
       
       toast.success('Relatório baixado com sucesso!');
       setReportModalOpen(false);
@@ -762,7 +932,7 @@ const ReportsList: React.FC = () => {
               onClick={handleDownloadReport}
               isLoading={downloading}
             >
-              Baixar Relatório
+              Baixar Relatório PDF
             </Button>
           </div>
         }
