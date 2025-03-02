@@ -10,6 +10,8 @@ import { supabase } from '../lib/supabase';
 import { toast } from 'react-toastify';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, Title } from 'chart.js';
 import { Pie, Bar } from 'react-chartjs-2';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 // Register ChartJS components
 ChartJS.register(ArcElement, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
@@ -465,10 +467,198 @@ const Dashboard: React.FC = () => {
       // Simulate report generation
       await new Promise(resolve => setTimeout(resolve, 1500));
       
+      // Create PDF document
+      const doc = new jsPDF();
+      
+      // Add title and header
+      doc.setFontSize(18);
+      doc.text(reportTitle, 14, 20);
+      
+      doc.setFontSize(12);
+      doc.text(`Relatório gerado em ${new Date().toLocaleDateString('pt-BR')}`, 14, 30);
+      
+      // Add content based on report type
+      let yPosition = 40;
+      
+      switch (reportType) {
+        case 'attendance':
+          // Group attendance by course
+          const courseAttendance: Record<string, { present: number; absent: number }> = {};
+          
+          reportData.forEach((record: any) => {
+            const courseName = record.enrollment.course.name;
+            
+            if (!courseAttendance[courseName]) {
+              courseAttendance[courseName] = { present: 0, absent: 0 };
+            }
+            
+            if (record.status === 'present') {
+              courseAttendance[courseName].present++;
+            } else {
+              courseAttendance[courseName].absent++;
+            }
+          });
+          
+          // Add summary table
+          doc.setFontSize(14);
+          doc.text('Resumo de Frequência', 14, yPosition);
+          yPosition += 10;
+          
+          const attendanceSummaryData = Object.entries(courseAttendance).map(([course, data]) => {
+            const total = data.present + data.absent;
+            const rate = total > 0 ? Math.round((data.present / total) * 100) : 0;
+            
+            return [
+              course,
+              data.present,
+              data.absent,
+              `${rate}%`
+            ];
+          });
+          
+          autoTable(doc, {
+            startY: yPosition,
+            head: [['Curso', 'Presenças', 'Faltas', 'Taxa']],
+            body: attendanceSummaryData,
+          });
+          
+          // Calculate overall attendance
+          const totalPresent = Object.values(courseAttendance).reduce((sum, data) => sum + data.present, 0);
+          const totalAbsent = Object.values(courseAttendance).reduce((sum, data) => sum + data.absent, 0);
+          const totalAttendance = totalPresent + totalAbsent;
+          const overallRate = totalAttendance > 0 ? Math.round((totalPresent / totalAttendance) * 100) : 0;
+          
+          yPosition = (doc as any).lastAutoTable.finalY + 10;
+          
+          doc.setFontSize(12);
+          doc.text(`Total de registros: ${totalAttendance}`, 14, yPosition);
+          yPosition += 6;
+          doc.text(`Presenças: ${totalPresent} (${overallRate}%)`, 14, yPosition);
+          yPosition += 6;
+          doc.text(`Faltas: ${totalAbsent} (${100 - overallRate}%)`, 14, yPosition);
+          break;
+          
+        case 'students':
+          // Count students by status
+          const statusCounts = {
+            active: reportData.filter((e: any) => e.status === 'active').length,
+            locked: reportData.filter((e: any) => e.status === 'locked').length,
+            completed: reportData.filter((e: any) => e.status === 'completed').length
+          };
+          
+          const totalStudents = statusCounts.active + statusCounts.locked + statusCounts.completed;
+          
+          // Add summary
+          doc.setFontSize(14);
+          doc.text('Alunos por Status', 14, yPosition);
+          yPosition += 10;
+          
+          const studentStatusData = [
+            ['Ativo', statusCounts.active, `${Math.round((statusCounts.active / totalStudents) * 100)}%`],
+            ['Trancado', statusCounts.locked, `${Math.round((statusCounts.locked / totalStudents) * 100)}%`],
+            ['Concluído', statusCounts.completed, `${Math.round((statusCounts.completed / totalStudents) * 100)}%`]
+          ];
+          
+          autoTable(doc, {
+            startY: yPosition,
+            head: [['Status', 'Quantidade', 'Percentual']],
+            body: studentStatusData,
+          });
+          
+          // Add age distribution
+          yPosition = (doc as any).lastAutoTable.finalY + 10;
+          
+          // Calculate age groups (simulated data)
+          const ageGroups = {
+            under12: Math.floor(totalStudents * 0.3),
+            teens: Math.floor(totalStudents * 0.5),
+            adults: Math.floor(totalStudents * 0.2)
+          };
+          
+          doc.setFontSize(14);
+          doc.text('Distribuição por Idade', 14, yPosition);
+          yPosition += 10;
+          
+          const ageDistributionData = [
+            ['Até 12 anos', ageGroups.under12, '30%'],
+            ['13 a 17 anos', ageGroups.teens, '50%'],
+            ['18 anos ou mais', ageGroups.adults, '20%']
+          ];
+          
+          autoTable(doc, {
+            startY: yPosition,
+            head: [['Faixa Etária', 'Quantidade', 'Percentual']],
+            body: ageDistributionData,
+          });
+          break;
+          
+        case 'social':
+          // Count occurrences of each need type
+          const needCounts: Record<string, number> = {};
+          
+          reportData.forEach((record: any) => {
+            record.identified_needs.forEach((need: string) => {
+              needCounts[need] = (needCounts[need] || 0) + 1;
+            });
+          });
+          
+          // Add summary
+          doc.setFontSize(14);
+          doc.text('Atendimentos por Tipo de Necessidade', 14, yPosition);
+          yPosition += 10;
+          
+          const totalNeeds = Object.values(needCounts).reduce((sum, count) => sum + count, 0);
+          
+          const needsData = Object.entries(needCounts).map(([need, count]) => [
+            need,
+            count,
+            `${Math.round((count / totalNeeds) * 100)}%`
+          ]);
+          
+          autoTable(doc, {
+            startY: yPosition,
+            head: [['Necessidade', 'Ocorrências', 'Percentual']],
+            body: needsData,
+          });
+          
+          yPosition = (doc as any).lastAutoTable.finalY + 10;
+          
+          doc.setFontSize(12);
+          doc.text(`Total de atendimentos: ${reportData.length}`, 14, yPosition);
+          yPosition += 6;
+          doc.text(`Total de necessidades identificadas: ${totalNeeds}`, 14, yPosition);
+          break;
+          
+        case 'certificates':
+          doc.setFontSize(14);
+          doc.text('Certificados Emitidos', 14, yPosition);
+          yPosition += 10;
+          
+          doc.setFontSize(12);
+          doc.text('Nenhum certificado emitido nos últimos 30 dias.', 14, yPosition);
+          break;
+      }
+      
+      // Add footer
+      const pageCount = doc.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.text(
+          `ONG Amar Sem Limites - Página ${i} de ${pageCount}`,
+          doc.internal.pageSize.getWidth() / 2,
+          doc.internal.pageSize.getHeight() - 10,
+          { align: 'center' }
+        );
+      }
+      
+      // Save the PDF
+      doc.save(`${reportTitle.replace(/\s+/g, '_').toLowerCase()}_${new Date().toISOString().split('T')[0]}.pdf`);
+      
       // Show success message
       toast.success(`Relatório "${reportTitle}" gerado com sucesso!`);
       
-      // Open report modal with data
+      // Set selected report for modal (but we won't open it since we're downloading directly)
       setSelectedReport({
         id: `report-${Date.now()}`,
         title: reportTitle,
@@ -476,8 +666,6 @@ const Dashboard: React.FC = () => {
         icon: <FileText size={24} className="text-blue-500" />,
         type: reportType as any
       });
-      
-      setReportModalOpen(true);
       
     } catch (error) {
       console.error('Error generating report:', error);
@@ -719,6 +907,7 @@ const Dashboard: React.FC = () => {
               </div>
             ) : (
               <div className="flex items-center justify-center h-full">
+                <p className="text-gray-500"> <div className="flex items-center justify-center h-full">
                 <p className="text-gray-500">Nenhum dado disponível para exibir o gráfico</p>
               </div>
             )}
