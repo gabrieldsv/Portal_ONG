@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Plus, Search, Filter } from 'lucide-react';
+import { Activity, Plus, Search, Filter, Download } from 'lucide-react';
 import Button from '../../components/ui/Button';
 import Card from '../../components/ui/Card';
 import Input from '../../components/ui/Input';
@@ -10,6 +10,8 @@ import Textarea from '../../components/ui/Textarea';
 import Table from '../../components/ui/Table';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'react-toastify';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { Student } from '../../types';
 
 interface HealthRecord {
@@ -28,10 +30,12 @@ const HealthRecordsList: React.FC = () => {
   const [professionalName, setProfessionalName] = useState('');
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('dental');
   const [students, setStudents] = useState<Student[]>([]);
   const [healthRecords, setHealthRecords] = useState<HealthRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState('dental');
+  const [detailsModalOpen, setDetailsModalOpen] = useState(false);
+  const [selectedRecord, setSelectedRecord] = useState<HealthRecord | null>(null);
 
   useEffect(() => {
     fetchStudents();
@@ -166,6 +170,50 @@ const HealthRecordsList: React.FC = () => {
     }
   };
 
+  const handleExportPDF = () => {
+    try {
+      const doc = new jsPDF();
+      
+      // Add title
+      doc.setFontSize(18);
+      doc.text(`Relatório de Saúde - ${
+        activeTab === 'dental' ? 'Odontológico' :
+        activeTab === 'psychological' ? 'Psicológico' :
+        activeTab === 'nutritional' ? 'Nutricional' : 'Médico'
+      }`, 14, 20);
+      
+      doc.setFontSize(12);
+      doc.text(`Data de geração: ${new Date().toLocaleDateString('pt-BR')}`, 14, 30);
+      
+      // Add table
+      const tableData = filteredRecords.map(record => [
+        record.student_name,
+        new Date(record.date).toLocaleDateString('pt-BR'),
+        record.professional_name,
+        record.notes
+      ]);
+      
+      autoTable(doc, {
+        startY: 40,
+        head: [['Aluno', 'Data', 'Profissional', 'Observações']],
+        body: tableData,
+      });
+      
+      // Save the PDF
+      doc.save(`registros-saude-${activeTab}.pdf`);
+      
+      toast.success('Relatório exportado com sucesso!');
+    } catch (error) {
+      console.error('Error exporting PDF:', error);
+      toast.error('Erro ao exportar relatório');
+    }
+  };
+
+  const handleViewDetails = (record: HealthRecord) => {
+    setSelectedRecord(record);
+    setDetailsModalOpen(true);
+  };
+
   const openModalWithType = (type: string) => {
     setRecordType(type);
     setIsModalOpen(true);
@@ -196,7 +244,13 @@ const HealthRecordsList: React.FC = () => {
       header: 'Ações',
       accessor: (record: HealthRecord) => (
         <div className="flex space-x-2">
-          <Button variant="secondary" size="sm">Ver Detalhes</Button>
+          <Button 
+            variant="secondary" 
+            size="sm"
+            onClick={() => handleViewDetails(record)}
+          >
+            Ver Detalhes
+          </Button>
         </div>
       ),
     },
@@ -220,6 +274,13 @@ const HealthRecordsList: React.FC = () => {
             leftIcon={<Filter size={18} />}
           >
             Filtros
+          </Button>
+          <Button
+            variant="primary"
+            leftIcon={<Download size={18} />}
+            onClick={handleExportPDF}
+          >
+            Exportar
           </Button>
         </div>
 
@@ -458,6 +519,154 @@ const HealthRecordsList: React.FC = () => {
             fullWidth
           />
         </div>
+      </Modal>
+
+      {/* Details Modal */}
+      <Modal
+        isOpen={detailsModalOpen}
+        onClose={() => setDetailsModalOpen(false)}
+        title="Detalhes do Registro de Saúde"
+        footer={
+          <div className="flex justify-end">
+            <Button
+              variant="secondary"
+              onClick={() => setDetailsModalOpen(false)}
+            >
+              Fechar
+            </Button>
+          </div>
+        }
+      >
+        {selectedRecord && (
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm font-medium text-gray-500">Aluno</p>
+              <p className="text-lg font-medium">{selectedRecord.student_name}</p>
+            </div>
+            
+            <div>
+              <p className="text-sm font-medium text-gray-500">Data do Atendimento</p>
+              <p>{new Date(selectedRecord.date).toLocaleDateString('pt-BR')}</p>
+            </div>
+            
+            <div>
+              <p className="text-sm font-medium text-gray-500">Profissional</p>
+              <p>{selectedRecord.professional_name}</p>
+            </div>
+            
+            {selectedRecord.record_type === 'dental' && (
+              <>
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Histórico Odontológico</p>
+                  <p className="mt-1 whitespace-pre-wrap">{selectedRecord.dental_history}</p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Hábitos de Higiene</p>
+                  <p className="mt-1 whitespace-pre-wrap">{selectedRecord.hygiene_habits}</p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Tratamentos Anteriores</p>
+                  <p className="mt-1 whitespace-pre-wrap">{selectedRecord.previous_treatments}</p>
+                </div>
+              </>
+            )}
+            
+            {selectedRecord.record_type === 'psychological' && (
+              <>
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Histórico Emocional</p>
+                  <p className="mt-1 whitespace-pre-wrap">{selectedRecord.emotional_history}</p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Avaliação Comportamental</p>
+                  <p className="mt-1 whitespace-pre-wrap">{selectedRecord.behavior_assessment}</p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Diagnóstico</p>
+                  <p className="mt-1 whitespace-pre-wrap">{selectedRecord.diagnosis}</p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Encaminhamentos</p>
+                  <p className="mt-1 whitespace-pre-wrap">{selectedRecord.referrals}</p>
+                </div>
+              </>
+            )}
+            
+            {selectedRecord.record_type === 'nutritional' && (
+              <>
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Avaliação Nutricional</p>
+                  <p className="mt-1 whitespace-pre-wrap">{selectedRecord.nutritional_assessment}</p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Hábitos Alimentares</p>
+                  <p className="mt-1 whitespace-pre-wrap">{selectedRecord.eating_habits}</p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-500">IMC</p>
+                  <p className="mt-1">{selectedRecord.bmi}</p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Plano Alimentar Sugerido</p>
+                  <p className="mt-1 whitespace-pre-wrap">{selectedRecord.suggested_meal_plan}</p>
+                </div>
+              </>
+            )}
+            
+            {selectedRecord.record_type === 'medical' && (
+              <>
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Histórico Clínico</p>
+                  <p className="mt-1 whitespace-pre-wrap">{selectedRecord.clinical_history}</p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Alergias</p>
+                  <div className="flex flex-wrap gap-2 mt-1">
+                    {selectedRecord.allergies?.map((allergy, index) => (
+                      <span
+                        key={index}
+                        className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800"
+                      >
+                        {allergy}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Medicamentos</p>
+                  <div className="flex flex-wrap gap-2 mt-1">
+                    {selectedRecord.medications?.map((medication, index) => (
+                      <span
+                        key={index}
+                        className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                      >
+                        {medication}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Condições Preexistentes</p>
+                  <div className="flex flex-wrap gap-2 mt-1">
+                    {selectedRecord.preexisting_conditions?.map((condition, index) => (
+                      <span
+                        key={index}
+                        className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800"
+                      >
+                        {condition}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+            
+            <div>
+              <p className="text-sm font-medium text-gray-500">Observações</p>
+              <p className="mt-1 whitespace-pre-wrap">{selectedRecord.notes}</p>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );
