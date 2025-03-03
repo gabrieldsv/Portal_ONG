@@ -907,7 +907,6 @@ const Dashboard: React.FC = () => {
               </div>
             ) : (
               <div className="flex items-center justify-center h-full">
-                <p className="text-gray-500"> <div className="flex items-center justify-center h-full">
                 <p className="text-gray-500">Nenhum dado disponível para exibir o gráfico</p>
               </div>
             )}
