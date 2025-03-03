@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Heart, Plus, Search, Filter, Download, FileText } from 'lucide-react';
+import { Heart, Plus, Search, Filter, Download, FileText, Edit, Trash2 } from 'lucide-react';
 import Button from '../../components/ui/Button';
 import Card from '../../components/ui/Card';
 import Input from '../../components/ui/Input';
@@ -34,6 +34,8 @@ const SocialAssistanceList: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<SocialAssistanceRecord | null>(null);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [editMode, setEditMode] = useState(false);
 
   useEffect(() => {
     fetchStudents();
@@ -136,6 +138,62 @@ const SocialAssistanceList: React.FC = () => {
     }
   };
 
+  const handleEditRecord = async () => {
+    if (!selectedRecord) return;
+
+    if (selectedNeeds.length === 0) {
+      toast.error('Por favor, selecione pelo menos uma necessidade identificada');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('social_assistance_records')
+        .update({
+          identified_needs: selectedNeeds,
+          notes: notes
+        })
+        .eq('id', selectedRecord.id);
+
+      if (error) throw error;
+
+      toast.success('Atendimento atualizado com sucesso!');
+      setDetailsModalOpen(false);
+      setEditMode(false);
+      fetchAssistanceRecords();
+    } catch (error) {
+      console.error('Error updating record:', error);
+      toast.error('Erro ao atualizar atendimento');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteRecord = async () => {
+    if (!selectedRecord) return;
+
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('social_assistance_records')
+        .delete()
+        .eq('id', selectedRecord.id);
+
+      if (error) throw error;
+
+      toast.success('Atendimento excluído com sucesso!');
+      setDeleteModalOpen(false);
+      setDetailsModalOpen(false);
+      fetchAssistanceRecords();
+    } catch (error) {
+      console.error('Error deleting record:', error);
+      toast.error('Erro ao excluir atendimento');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleNeedToggle = (need: string) => {
     if (selectedNeeds.includes(need)) {
       setSelectedNeeds(selectedNeeds.filter(n => n !== need));
@@ -181,6 +239,9 @@ const SocialAssistanceList: React.FC = () => {
 
   const handleViewDetails = (record: SocialAssistanceRecord) => {
     setSelectedRecord(record);
+    setSelectedNeeds(record.identified_needs);
+    setNotes(record.notes);
+    setEditMode(false);
     setDetailsModalOpen(true);
   };
 
@@ -408,19 +469,62 @@ const SocialAssistanceList: React.FC = () => {
         </div>
       </Modal>
 
-      {/* Details Modal */}
       <Modal
         isOpen={detailsModalOpen}
         onClose={() => setDetailsModalOpen(false)}
-        title="Detalhes do Atendimento"
+        title={editMode ? "Editar Atendimento" : "Detalhes do Atendimento"}
         footer={
-          <div className="flex justify-end">
-            <Button
-              variant="secondary"
-              onClick={() => setDetailsModalOpen(false)}
-            >
-              Fechar
-            </Button>
+          <div className="flex justify-between">
+            <div>
+              {!editMode && (
+                <Button
+                  variant="danger"
+                  leftIcon={<Trash2 size={18} />}
+                  onClick={() => setDeleteModalOpen(true)}
+                >
+                  Excluir
+                </Button>
+              )}
+            </div>
+            <div className="flex space-x-2">
+              {editMode ? (
+                <>
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setEditMode(false);
+                      setSelectedNeeds(selectedRecord?.identified_needs || []);
+                      setNotes(selectedRecord?.notes || '');
+                    }}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    variant="primary"
+                    onClick={handleEditRecord}
+                    isLoading={loading}
+                  >
+                    Salvar
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    variant="secondary"
+                    onClick={() => setDetailsModalOpen(false)}
+                  >
+                    Fechar
+                  </Button>
+                  <Button
+                    variant="primary"
+                    leftIcon={<Edit size={18} />}
+                    onClick={() => setEditMode(true)}
+                  >
+                    Editar
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
         }
       >
@@ -436,26 +540,91 @@ const SocialAssistanceList: React.FC = () => {
               <p>{new Date(selectedRecord.date).toLocaleDateString('pt-BR')}</p>
             </div>
             
-            <div>
-              <p className="text-sm font-medium text-gray-500">Necessidades Identificadas</p>
-              <div className="flex flex-wrap gap-2 mt-1">
-                {selectedRecord.identified_needs.map((need, index) => (
-                  <span
-                    key={index}
-                    className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-pink-100 text-pink-800"
-                  >
-                    {need}
-                  </span>
-                ))}
-              </div>
-            </div>
-            
-            <div>
-              <p className="text-sm font-medium text-gray-500">Observações</p>
-              <p className="mt-1 whitespace-pre-wrap">{selectedRecord.notes}</p>
-            </div>
+            {editMode ? (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Necessidades Identificadas <span className="text-red-500">*</span>
+                  </label>
+                  <div className="space-y-2">
+                    {['Moradia', 'Alimentação', 'Renda', 'Transporte', 'Saúde', 'Educação', 'Documentação', 'Jurídico'].map((need) => (
+                      <div key={need} className="flex items-center">
+                        <input
+                          type="checkbox"
+                          id={`need-${need}`}
+                          checked={selectedNeeds.includes(need)}
+                          onChange={() => handleNeedToggle(need)}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        <label htmlFor={`need-${need}`} className="ml-2 block text-sm text-gray-900">
+                          {need}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                
+                <Textarea
+                  label="Observações"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={4}
+                  fullWidth
+                />
+              </>
+            ) : (
+              <>
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Necessidades Identificadas</p>
+                  <div className="flex flex-wrap gap-2 mt-1">
+                    {selectedRecord.identified_needs.map((need, index) => (
+                      <span
+                        key={index}
+                        className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-pink-100 text-pink-800"
+                      >
+                        {need}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Observações</p>
+                  <p className="mt-1 whitespace-pre-wrap">{selectedRecord.notes}</p>
+                </div>
+              </>
+            )}
           </div>
         )}
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        isOpen={deleteModalOpen}
+        onClose={() => setDeleteModalOpen(false)}
+        title="Confirmar Exclusão"
+        footer={
+          <div className="flex justify-end space-x-2">
+            <Button
+              variant="secondary"
+              onClick={() => setDeleteModalOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="danger"
+              onClick={handleDeleteRecord}
+              isLoading={loading}
+            >
+              Excluir
+            </Button>
+          </div>
+        }
+      >
+        <p>Tem certeza que deseja excluir este atendimento do aluno <strong>{selectedRecord?.student_name}</strong>?</p>
+        <p className="mt-2 text-sm text-gray-500">
+          Esta ação não pode ser desfeita.
+        </p>
       </Modal>
     </div>
   );
