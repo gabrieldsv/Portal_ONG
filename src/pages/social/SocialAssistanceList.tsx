@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Heart, Plus, Search, Filter } from 'lucide-react';
+import { Heart, Plus, Search, Filter, Download, FileText } from 'lucide-react';
 import Button from '../../components/ui/Button';
 import Card from '../../components/ui/Card';
 import Input from '../../components/ui/Input';
@@ -9,6 +9,8 @@ import Textarea from '../../components/ui/Textarea';
 import Table from '../../components/ui/Table';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'react-toastify';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { Student } from '../../types';
 
 interface SocialAssistanceRecord {
@@ -30,6 +32,8 @@ const SocialAssistanceList: React.FC = () => {
   const [students, setStudents] = useState<Student[]>([]);
   const [assistanceRecords, setAssistanceRecords] = useState<SocialAssistanceRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [detailsModalOpen, setDetailsModalOpen] = useState(false);
+  const [selectedRecord, setSelectedRecord] = useState<SocialAssistanceRecord | null>(null);
 
   useEffect(() => {
     fetchStudents();
@@ -140,6 +144,46 @@ const SocialAssistanceList: React.FC = () => {
     }
   };
 
+  const handleExportPDF = () => {
+    try {
+      const doc = new jsPDF();
+      
+      // Add title
+      doc.setFontSize(18);
+      doc.text('Relatório de Atendimentos Sociais', 14, 20);
+      
+      doc.setFontSize(12);
+      doc.text(`Data de geração: ${new Date().toLocaleDateString('pt-BR')}`, 14, 30);
+      
+      // Add table
+      const tableData = filteredRecords.map(record => [
+        record.student_name,
+        new Date(record.date).toLocaleDateString('pt-BR'),
+        record.identified_needs.join(', '),
+        record.notes
+      ]);
+      
+      autoTable(doc, {
+        startY: 40,
+        head: [['Aluno', 'Data', 'Necessidades', 'Observações']],
+        body: tableData,
+      });
+      
+      // Save the PDF
+      doc.save('atendimentos-sociais.pdf');
+      
+      toast.success('Relatório exportado com sucesso!');
+    } catch (error) {
+      console.error('Error exporting PDF:', error);
+      toast.error('Erro ao exportar relatório');
+    }
+  };
+
+  const handleViewDetails = (record: SocialAssistanceRecord) => {
+    setSelectedRecord(record);
+    setDetailsModalOpen(true);
+  };
+
   const filteredRecords = assistanceRecords.filter(record => {
     if (searchTerm) {
       return record.student_name.toLowerCase().includes(searchTerm.toLowerCase());
@@ -177,7 +221,13 @@ const SocialAssistanceList: React.FC = () => {
       header: 'Ações',
       accessor: (record: SocialAssistanceRecord) => (
         <div className="flex space-x-2">
-          <Button variant="secondary" size="sm">Ver Detalhes</Button>
+          <Button 
+            variant="secondary" 
+            size="sm"
+            onClick={() => handleViewDetails(record)}
+          >
+            Ver Detalhes
+          </Button>
         </div>
       ),
     },
@@ -237,6 +287,13 @@ const SocialAssistanceList: React.FC = () => {
               leftIcon={<Filter size={18} />}
             >
               Filtros
+            </Button>
+            <Button
+              variant="primary"
+              leftIcon={<Download size={18} />}
+              onClick={handleExportPDF}
+            >
+              Exportar
             </Button>
           </div>
         </div>
@@ -349,6 +406,56 @@ const SocialAssistanceList: React.FC = () => {
             </div>
           </div>
         </div>
+      </Modal>
+
+      {/* Details Modal */}
+      <Modal
+        isOpen={detailsModalOpen}
+        onClose={() => setDetailsModalOpen(false)}
+        title="Detalhes do Atendimento"
+        footer={
+          <div className="flex justify-end">
+            <Button
+              variant="secondary"
+              onClick={() => setDetailsModalOpen(false)}
+            >
+              Fechar
+            </Button>
+          </div>
+        }
+      >
+        {selectedRecord && (
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm font-medium text-gray-500">Aluno</p>
+              <p className="text-lg font-medium">{selectedRecord.student_name}</p>
+            </div>
+            
+            <div>
+              <p className="text-sm font-medium text-gray-500">Data do Atendimento</p>
+              <p>{new Date(selectedRecord.date).toLocaleDateString('pt-BR')}</p>
+            </div>
+            
+            <div>
+              <p className="text-sm font-medium text-gray-500">Necessidades Identificadas</p>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {selectedRecord.identified_needs.map((need, index) => (
+                  <span
+                    key={index}
+                    className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-pink-100 text-pink-800"
+                  >
+                    {need}
+                  </span>
+                ))}
+              </div>
+            </div>
+            
+            <div>
+              <p className="text-sm font-medium text-gray-500">Observações</p>
+              <p className="mt-1 whitespace-pre-wrap">{selectedRecord.notes}</p>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );
