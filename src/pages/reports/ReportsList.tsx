@@ -56,28 +56,27 @@ const ReportsList: React.FC = () => {
       switch (filters.reportType) {
         case 'attendance': {
           reportTitle = 'Relatório de Frequência';
-          const query = supabase
+          const { data, error } = await supabase
             .from('attendance_students')
             .select(`
               *,
-              enrollment:enrollments!inner(
-                student:students(
+              enrollment:enrollments (
+                student:students (
                   full_name,
-                  cpf
+                  cpf,
+                  age,
+                  phone,
+                  email
                 ),
-                course:courses(
-                  name
+                course:courses (
+                  name,
+                  shift,
+                  workload_hours
                 )
               )
             `)
-            .gte('date', filters.startDate)
-            .lte('date', filters.endDate);
+            .order('date', { ascending: false });
 
-          if (filters.courseId) {
-            query.eq('enrollment.course_id', filters.courseId);
-          }
-
-          const { data, error } = await query;
           if (error) throw error;
           reportData = data;
           break;
@@ -86,9 +85,28 @@ const ReportsList: React.FC = () => {
         case 'courses': {
           reportTitle = 'Relatório de Cursos';
           const { data, error } = await supabase
-            .from('courses')
-            .select('*, enrollments(status, student:students(*))')
-            .eq(filters.courseId ? 'id' : 'id', filters.courseId || supabase.raw('id'));
+            .from('enrollments')
+            .select(`
+              *,
+              student:students (
+                full_name,
+                cpf,
+                age,
+                phone,
+                email,
+                address,
+                nis
+              ),
+              course:courses (
+                name,
+                description,
+                workload_hours,
+                shift,
+                executive_manager,
+                volunteer_manager,
+                educational_advisor
+              )
+            `);
 
           if (error) throw error;
           reportData = data;
@@ -124,21 +142,22 @@ const ReportsList: React.FC = () => {
 
         case 'social': {
           reportTitle = 'Relatório de Assistência Social';
-          const query = supabase
+          const { data, error } = await supabase
             .from('social_assistance_records')
             .select(`
               *,
-              student:students(
+              student:students (
                 full_name,
                 cpf,
                 age,
+                phone,
+                email,
+                address,
                 nis
               )
             `)
-            .gte('date', filters.startDate)
-            .lte('date', filters.endDate);
+            .order('date', { ascending: false });
 
-          const { data, error } = await query;
           if (error) throw error;
           reportData = data;
           break;
@@ -162,20 +181,15 @@ const ReportsList: React.FC = () => {
       // Add header
       doc.setFontSize(18);
       doc.text(reportTitle, 14, 20);
-
+      doc.setFontSize(14);
+      doc.text('ONG Amar Sem Limites', 14, 30);
+      
       doc.setFontSize(12);
-      doc.text(
-        `Período: ${new Date(filters.startDate).toLocaleDateString('pt-BR')} a ${new Date(filters.endDate).toLocaleDateString('pt-BR')}`,
-        14,
-        30
-      );
-
-      if (filters.courseId) {
-        const course = courses.find(c => c.id === filters.courseId);
-        doc.text(`Curso: ${course?.name}`, 14, 38);
-      }
-
-      let yPosition = 50;
+      doc.text(`Data de geração: ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`, 14, 40);
+      doc.text(`Período: ${new Date(filters.startDate).toLocaleDateString('pt-BR')} a ${new Date(filters.endDate).toLocaleDateString('pt-BR')}`, 14, 48);
+      
+      // Add content based on report type
+      let yPosition = 60;
 
       switch (filters.reportType) {
         case 'attendance': {
@@ -199,158 +213,319 @@ const ReportsList: React.FC = () => {
           doc.text('Resumo de Frequência', 14, yPosition);
           yPosition += 10;
 
-          const summaryData = [
-            ['Total de Registros', totalAttendances.toString()],
-            ['Presenças', presentCount.toString()],
-            ['Faltas', absentCount.toString()],
-            ['Taxa de Frequência', `${attendanceRate}%`],
-          ];
-
-          autoTable(doc, {
-            startY: yPosition,
-            body: summaryData,
-          });
-
-          yPosition = (doc as any).lastAutoTable.finalY + 15;
-
-          // Add detailed attendance by date
-          Object.entries(attendanceByDate).forEach(([date, records]) => {
-            doc.setFontSize(14);
-            doc.text(`Frequência - ${date}`, 14, yPosition);
-            yPosition += 10;
-
-            const tableData = records.map((record: any) => [
-              record.enrollment.student.full_name,
-              record.enrollment.student.cpf,
-              record.enrollment.course.name,
-              record.status === 'present' ? 'Presente' : 'Ausente',
-              record.absence_reason || '-',
-            ]);
-
-            autoTable(doc, {
-              startY: yPosition,
-              head: [['Aluno', 'CPF', 'Curso', 'Status', 'Motivo da Falta']],
-              body: tableData,
-            });
-
-            yPosition = (doc as any).lastAutoTable.finalY + 15;
-          });
-          break;
-        }
-
-        case 'courses': {
-          // Group students by course
-          reportData.forEach((course: any) => {
-            doc.setFontSize(14);
-            doc.text(course.name, 14, yPosition);
-            yPosition += 10;
-
-            const courseDetails = [
-              ['Carga Horária', `${course.workload_hours}h`],
-              ['Turno', course.shift === 'morning' ? 'Manhã' : course.shift === 'afternoon' ? 'Tarde' : 'Noite'],
-              ['Vagas Disponíveis', course.available_spots.toString()],
-              ['Alunos Matriculados', course.enrollments.length.toString()],
-              ['Ativos', course.enrollments.filter((e: any) => e.status === 'active').length.toString()],
-              ['Trancados', course.enrollments.filter((e: any) => e.status === 'locked').length.toString()],
-              ['Concluídos', course.enrollments.filter((e: any) => e.status === 'completed').length.toString()],
-            ];
-
-            autoTable(doc, {
-              startY: yPosition,
-              body: courseDetails,
-            });
-
-            yPosition = (doc as any).lastAutoTable.finalY + 10;
-
-            if (course.enrollments.length > 0) {
-              const studentsData = course.enrollments.map((enrollment: any) => [
-                enrollment.student.full_name,
-                enrollment.student.cpf,
-                enrollment.status,
-              ]);
-
-              autoTable(doc, {
-                startY: yPosition,
-                head: [['Aluno', 'CPF', 'Status']],
-                body: studentsData,
-              });
-
-              yPosition = (doc as any).lastAutoTable.finalY + 15;
+          // Add course details
+          const courseDetails = {};
+          reportData.forEach(record => {
+            const course = record.enrollment.course;
+            if (!courseDetails[course.name]) {
+              courseDetails[course.name] = {
+                name: course.name,
+                shift: course.shift === 'morning' ? 'Manhã' : course.shift === 'afternoon' ? 'Tarde' : 'Noite',
+                workload: course.workload_hours,
+                students: new Set(),
+                present: 0,
+                absent: 0
+              };
+            }
+            courseDetails[course.name].students.add(record.enrollment.student.full_name);
+            if (record.status === 'present') {
+              courseDetails[course.name].present++;
+            } else {
+              courseDetails[course.name].absent++;
             }
           });
-          break;
-        }
 
-        case 'health': {
-          doc.setFontSize(14);
-          doc.text('Registros de Saúde', 14, yPosition);
-          yPosition += 10;
-
-          const tableData = reportData.map((record: any) => [
-            record.student.full_name,
-            record.student.cpf,
-            new Date(record.date).toLocaleDateString('pt-BR'),
-            record.professional_name,
-            record.notes,
+          const courseDetailsData = Object.values(courseDetails).map(course => [
+            course.name,
+            course.shift,
+            `${course.workload}h`,
+            course.students.size,
+            course.present,
+            course.absent,
+            `${((course.present / (course.present + course.absent)) * 100).toFixed(1)}%`
           ]);
 
           autoTable(doc, {
             startY: yPosition,
-            head: [['Aluno', 'CPF', 'Data', 'Profissional', 'Observações']],
-            body: tableData,
+            head: [['Curso', 'Turno', 'C.H.', 'Alunos', 'Presenças', 'Faltas', 'Taxa']],
+            body: courseDetailsData,
           });
 
+          yPosition = (doc as any).lastAutoTable.finalY + 15;
+          
+          // Add summary table
+          doc.setFontSize(14);
+          doc.text('Detalhamento por Aluno', 14, yPosition);
+          yPosition += 10;
+          
+          // Group by student
+          const studentAttendance = {};
+          reportData.forEach(record => {
+            const student = record.enrollment.student;
+            const key = `${student.full_name}-${student.cpf}`;
+            if (!studentAttendance[key]) {
+              studentAttendance[key] = {
+                name: student.full_name,
+                cpf: student.cpf,
+                age: student.age,
+                courses: new Set(),
+                present: 0,
+                absent: 0,
+                absenceReasons: []
+              };
+            }
+            studentAttendance[key].courses.add(record.enrollment.course.name);
+            if (record.status === 'present') {
+              studentAttendance[key].present++;
+            } else {
+              studentAttendance[key].absent++;
+              if (record.absence_reason) {
+                studentAttendance[key].absenceReasons.push({
+                  date: record.date,
+                  reason: record.absence_reason
+                });
+              }
+            }
+          });
+
+          const studentDetailsData = Object.values(studentAttendance).map(student => [
+            student.name,
+            student.cpf,
+            student.age,
+            Array.from(student.courses).join(', '),
+            student.present,
+            student.absent,
+            `${((student.present / (student.present + student.absent)) * 100).toFixed(1)}%`
+          ]);
+          
+          autoTable(doc, {
+            startY: yPosition,
+            head: [['Aluno', 'CPF', 'Idade', 'Cursos', 'Presenças', 'Faltas', 'Taxa']],
+            body: studentDetailsData,
+          });
+          
+          // Calculate overall attendance
+          const totalAttendance = reportData.length;
+          const totalPresent = reportData.filter((r: any) => r.status === 'present').length;
+          const totalAbsent = reportData.filter((r: any) => r.status === 'absent').length;
+          const overallRate = ((totalPresent / totalAttendance) * 100).toFixed(1);
+          
+          yPosition = (doc as any).lastAutoTable.finalY + 15;
+          doc.setFontSize(12);
+          doc.text(`Total de registros: ${totalAttendance}`, 14, yPosition);
+          yPosition += 6;
+          doc.text(`Presenças: ${totalPresent} (${overallRate}%)`, 14, yPosition);
+          yPosition += 8;
+          doc.text(`Faltas: ${totalAbsent} (${(100 - overallRate).toFixed(1)}%)`, 14, yPosition);
+
+          // Add absence reasons if any exist
+          const absenceReasons = Object.values(studentAttendance)
+            .flatMap(student => student.absenceReasons)
+            .filter(reason => reason);
+
+          if (absenceReasons.length > 0) {
+            yPosition += 15;
+            doc.setFontSize(14);
+            doc.text('Registro de Faltas', 14, yPosition);
+            yPosition += 10;
+
+            const absenceData = absenceReasons.map(reason => [
+              new Date(reason.date).toLocaleDateString('pt-BR'),
+              reason.reason
+            ]);
+
+            autoTable(doc, {
+              startY: yPosition,
+              head: [['Data', 'Motivo da Falta']],
+              body: absenceData,
+            });
+          }
+          break;
+        }
+
+        case 'courses': {
+          // Count students by status
+          const studentsByStatus = {
+            active: [],
+            locked: [],
+            completed: []
+          };
+
+          reportData.forEach((enrollment: any) => {
+            studentsByStatus[enrollment.status].push({
+              ...enrollment.student,
+              course: enrollment.course.name,
+              enrollmentDate: enrollment.enrollment_date
+            });
+          });
+          
+          const totalStudents = reportData.length;
+          
+          // Add summary
+          doc.setFontSize(14);
+          doc.text('Alunos por Status', 14, yPosition);
+          yPosition += 10;
+          
+          // Detailed status counts
+          const studentStatusData = [
+            ['Ativo', studentsByStatus.active.length, `${((studentsByStatus.active.length / totalStudents) * 100).toFixed(1)}%`],
+            ['Trancado', studentsByStatus.locked.length, `${((studentsByStatus.locked.length / totalStudents) * 100).toFixed(1)}%`],
+            ['Concluído', studentsByStatus.completed.length, `${((studentsByStatus.completed.length / totalStudents) * 100).toFixed(1)}%`]
+          ];
+          
+          autoTable(doc, {
+            startY: yPosition,
+            head: [['Status', 'Quantidade', 'Percentual']],
+            body: studentStatusData,
+          });
+          
+          yPosition = (doc as any).lastAutoTable.finalY + 10;
+          
+          // Add age distribution
+          const ageGroups = {
+            under12: reportData.filter((e: any) => e.student.age < 12),
+            teens: reportData.filter((e: any) => e.student.age >= 12 && e.student.age < 18),
+            adults: reportData.filter((e: any) => e.student.age >= 18)
+          };
+          
+          doc.setFontSize(14);
+          doc.text('Distribuição por Idade', 14, yPosition);
+          yPosition += 10;
+          
+          const totalByAge = ageGroups.under12.length + ageGroups.teens.length + ageGroups.adults.length;
+          
+          const ageDistributionData = [
+            ['Até 12 anos', ageGroups.under12.length, `${((ageGroups.under12.length / totalByAge) * 100).toFixed(1)}%`],
+            ['13 a 17 anos', ageGroups.teens.length, `${((ageGroups.teens.length / totalByAge) * 100).toFixed(1)}%`],
+            ['18 anos ou mais', ageGroups.adults.length, `${((ageGroups.adults.length / totalByAge) * 100).toFixed(1)}%`]
+          ];
+          
+          autoTable(doc, {
+            startY: yPosition,
+            head: [['Faixa Etária', 'Quantidade', 'Percentual']],
+            body: ageDistributionData,
+          });
+
+          // Add detailed student list by status
+          ['active', 'locked', 'completed'].forEach(status => {
+            if (studentsByStatus[status].length > 0) {
+              yPosition = (doc as any).lastAutoTable.finalY + 15;
+              doc.setFontSize(14);
+              doc.text(`Alunos ${
+                status === 'active' ? 'Ativos' :
+                status === 'locked' ? 'Trancados' : 'Concluídos'
+              }`, 14, yPosition);
+              yPosition += 10;
+
+              const statusData = studentsByStatus[status].map(student => [
+                student.full_name,
+                student.cpf,
+                student.age,
+                student.course,
+                new Date(student.enrollmentDate).toLocaleDateString('pt-BR'),
+                student.nis ? 'Sim' : 'Não'
+              ]);
+
+              autoTable(doc, {
+                startY: yPosition,
+                head: [['Nome', 'CPF', 'Idade', 'Curso', 'Data Matrícula', 'NIS']],
+                body: statusData,
+              });
+            }
+          });
           break;
         }
 
         case 'social': {
           // Count occurrences of each need type
           const needCounts: Record<string, number> = {};
+          
           reportData.forEach((record: any) => {
             record.identified_needs.forEach((need: string) => {
               needCounts[need] = (needCounts[need] || 0) + 1;
             });
           });
-
+          
           // Add summary
           doc.setFontSize(14);
-          doc.text('Necessidades Identificadas', 14, yPosition);
+          doc.text('Resumo dos Atendimentos', 14, yPosition);
           yPosition += 10;
-
+          
           const totalNeeds = Object.values(needCounts).reduce((sum, count) => sum + count, 0);
+          
           const needsData = Object.entries(needCounts).map(([need, count]) => [
             need,
             count,
-            `${Math.round((count / totalNeeds) * 100)}%`,
+            `${((count / totalNeeds) * 100).toFixed(1)}%`
           ]);
-
+          
           autoTable(doc, {
             startY: yPosition,
             head: [['Necessidade', 'Ocorrências', 'Percentual']],
             body: needsData,
           });
-
+          
           yPosition = (doc as any).lastAutoTable.finalY + 15;
 
-          // Add detailed records
+          // Add detailed records by student
           doc.setFontSize(14);
-          doc.text('Atendimentos Realizados', 14, yPosition);
+          doc.text('Detalhamento por Aluno', 14, yPosition);
           yPosition += 10;
 
-          const recordsData = reportData.map((record: any) => [
-            record.student.full_name,
-            record.student.cpf,
-            new Date(record.date).toLocaleDateString('pt-BR'),
-            record.identified_needs.join(', '),
-            record.notes,
-          ]);
-
-          autoTable(doc, {
-            startY: yPosition,
-            head: [['Aluno', 'CPF', 'Data', 'Necessidades', 'Observações']],
-            body: recordsData,
+          // Group records by student
+          const studentRecords = {};
+          reportData.forEach((record: any) => {
+            const student = record.student;
+            if (!studentRecords[student.cpf]) {
+              studentRecords[student.cpf] = {
+                student,
+                records: []
+              };
+            }
+            studentRecords[student.cpf].records.push(record);
           });
 
+          // Add student details
+          Object.values(studentRecords).forEach((data: any) => {
+            const student = data.student;
+            const records = data.records;
+
+            autoTable(doc, {
+              startY: yPosition,
+              head: [[`Aluno: ${student.full_name} - CPF: ${student.cpf} ${student.nis ? '(NIS)' : ''}`]],
+              body: [
+                [`Idade: ${student.age} anos`],
+                [`Endereço: ${student.address}`],
+                [`Contato: ${student.phone} / ${student.email || 'Não informado'}`]
+              ],
+              styles: { fontSize: 10 }
+            });
+
+            yPosition = (doc as any).lastAutoTable.finalY + 5;
+
+            const recordsData = records.map(record => [
+              new Date(record.date).toLocaleDateString('pt-BR'),
+              record.identified_needs.join(', '),
+              record.referrals.join(', '),
+              record.notes
+            ]);
+
+            autoTable(doc, {
+              startY: yPosition,
+              head: [['Data', 'Necessidades', 'Encaminhamentos', 'Observações']],
+              body: recordsData,
+              styles: { fontSize: 9 }
+            });
+
+            yPosition = (doc as any).lastAutoTable.finalY + 10;
+          });
+          
+          doc.setFontSize(12);
+          doc.text(`Total de atendimentos: ${reportData.length}`, 14, yPosition);
+          yPosition += 6;
+          doc.text(`Total de necessidades identificadas: ${totalNeeds}`, 14, yPosition);
+          yPosition += 6;
+          doc.text(`Média de necessidades por atendimento: ${(totalNeeds / reportData.length).toFixed(1)}`, 14, yPosition);
           break;
         }
 
@@ -424,14 +599,14 @@ const ReportsList: React.FC = () => {
           break;
         }
       }
-
+      
       // Add footer with page numbers
       const pageCount = doc.getNumberOfPages();
       for (let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
         doc.setFontSize(10);
         doc.text(
-          `Página ${i} de ${pageCount}`,
+          `ONG Amar Sem Limites | Relatório gerado em ${new Date().toLocaleString('pt-BR')} | Página ${i} de ${pageCount}`,
           doc.internal.pageSize.getWidth() / 2,
           doc.internal.pageSize.getHeight() - 10,
           { align: 'center' }
