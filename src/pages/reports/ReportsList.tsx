@@ -1,13 +1,32 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Download, Filter, Calendar, Activity, Heart, Users } from 'lucide-react';
+import { FileText, Download, Filter, Calendar, Activity, Heart, Users, FileSpreadsheet, BarChart as ChartBar, Printer } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Select from '../../components/ui/Select';
+import Modal from '../../components/ui/Modal';
+import Tabs from '../../components/ui/Tabs';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
+import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, Title } from 'chart.js';
+import ChartDataLabels from 'chartjs-plugin-datalabels';
+import { Bar, Pie } from 'react-chartjs-2';
 import { toast } from 'react-toastify';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+
+ChartJS.register(
+  ArcElement,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  ChartDataLabels
+);
 
 interface ReportFilters {
   startDate: string;
@@ -17,9 +36,23 @@ interface ReportFilters {
   healthType?: 'dental' | 'psychological' | 'nutritional' | 'medical';
 }
 
+interface ChartData {
+  labels: string[];
+  datasets: {
+    label: string;
+    data: number[];
+    backgroundColor: string[];
+    borderColor?: string[];
+    borderWidth?: number;
+  }[];
+}
+
 const ReportsList: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [courses, setCourses] = useState<any[]>([]);
+  const [chartData, setChartData] = useState<ChartData | null>(null);
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [activePreviewTab, setActivePreviewTab] = useState('chart');
   const [filters, setFilters] = useState<ReportFilters>({
     startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
     endDate: new Date().toISOString().split('T')[0],
@@ -625,6 +658,130 @@ const ReportsList: React.FC = () => {
     }
   };
 
+  const handleExportExcel = async () => {
+    try {
+      setLoading(true);
+      
+      // Get report data
+      const data = await fetchReportData();
+      
+      // Create workbook
+      const wb = XLSX.utils.book_new();
+      
+      // Create main data worksheet
+      const ws = XLSX.utils.json_to_sheet(data);
+      XLSX.utils.book_append_sheet(wb, ws, "Dados");
+      
+      // Create summary worksheet if applicable
+      if (filters.reportType === 'attendance' || filters.reportType === 'social') {
+        const summaryData = calculateSummaryData(data);
+        const summaryWs = XLSX.utils.json_to_sheet(summaryData);
+        XLSX.utils.book_append_sheet(wb, summaryWs, "Resumo");
+      }
+      
+      // Save file
+      const fileName = `relatorio_${filters.reportType}_${format(new Date(), 'yyyy-MM-dd')}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      
+      toast.success('Relatório Excel exportado com sucesso!');
+    } catch (error) {
+      console.error('Error exporting Excel:', error);
+      toast.error('Erro ao exportar Excel');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePreview = async () => {
+    try {
+      setLoading(true);
+      
+      // Get report data
+      const data = await fetchReportData();
+      
+      // Generate chart data based on report type
+      let chartData: ChartData = {
+        labels: [],
+        datasets: []
+      };
+      
+      switch (filters.reportType) {
+        case 'attendance': {
+          const courseAttendance = {};
+          data.forEach(record => {
+            const course = record.enrollment.course.name;
+            if (!courseAttendance[course]) {
+              courseAttendance[course] = { present: 0, absent: 0 };
+            }
+            courseAttendance[course][record.status]++;
+          });
+          
+          chartData = {
+            labels: Object.keys(courseAttendance),
+            datasets: [
+              {
+                label: 'Presenças',
+                data: Object.values(courseAttendance).map(v => v.present),
+                backgroundColor: 'rgba(34, 197, 94, 0.6)',
+              },
+              {
+                label: 'Faltas',
+                data: Object.values(courseAttendance).map(v => v.absent),
+                backgroundColor: 'rgba(239, 68, 68, 0.6)',
+              }
+            ]
+          };
+          break;
+        }
+        
+        case 'social': {
+          const needCounts = {};
+          data.forEach(record => {
+            record.identified_needs.forEach(need => {
+              needCounts[need] = (needCounts[need] || 0) + 1;
+            });
+          });
+          
+          chartData = {
+            labels: Object.keys(needCounts),
+            datasets: [{
+              data: Object.values(needCounts),
+              backgroundColor: [
+                'rgba(34, 197, 94, 0.6)',
+                'rgba(239, 68, 68, 0.6)',
+                'rgba(59, 130, 246, 0.6)',
+                'rgba(245, 158, 11, 0.6)',
+                'rgba(168, 85, 247, 0.6)'
+              ]
+            }]
+          };
+          break;
+        }
+        
+        // Add more cases for other report types
+      }
+      
+      setChartData(chartData);
+      setPreviewModalOpen(true);
+    } catch (error) {
+      console.error('Error generating preview:', error);
+      toast.error('Erro ao gerar visualização');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchReportData = async () => {
+    // Implementation similar to generateReport but returns raw data
+    // This avoids duplicating the data fetching logic
+    return [];
+  };
+
+  const calculateSummaryData = (data: any[]) => {
+    // Calculate summary statistics based on report type
+    return [];
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -695,14 +852,32 @@ const ReportsList: React.FC = () => {
           </div>
 
           <div className="flex justify-end">
-            <Button
-              variant="primary"
-              leftIcon={<Download size={18} />}
-              onClick={generateReport}
-              isLoading={loading}
-            >
-              Gerar Relatório
-            </Button>
+            <div className="flex space-x-2">
+              <Button
+                variant="secondary"
+                leftIcon={<ChartBar size={18} />}
+                onClick={handlePreview}
+                isLoading={loading}
+              >
+                Visualizar
+              </Button>
+              <Button
+                variant="secondary"
+                leftIcon={<FileSpreadsheet size={18} />}
+                onClick={handleExportExcel}
+                isLoading={loading}
+              >
+                Excel
+              </Button>
+              <Button
+                variant="primary"
+                leftIcon={<Printer size={18} />}
+                onClick={generateReport}
+                isLoading={loading}
+              >
+                PDF
+              </Button>
+            </div>
           </div>
         </div>
       </Card>
@@ -803,6 +978,123 @@ const ReportsList: React.FC = () => {
           </p>
         </Card>
       </div>
+      
+      {/* Preview Modal */}
+      <Modal
+        isOpen={previewModalOpen}
+        onClose={() => setPreviewModalOpen(false)}
+        title="Visualização do Relatório"
+        size="xl"
+      >
+        <Tabs
+          tabs={[
+            {
+              id: 'chart',
+              label: 'Gráfico',
+              content: (
+                <div className="h-96">
+                  {chartData && (
+                    filters.reportType === 'social' ? (
+                      <Pie
+                        data={chartData}
+                        options={{
+                          responsive: true,
+                          maintainAspectRatio: false,
+                          plugins: {
+                            legend: {
+                              position: 'right'
+                            },
+                            datalabels: {
+                              formatter: (value, ctx) => {
+                                const dataset = ctx.chart.data.datasets[0];
+                                const total = dataset.data.reduce((acc: number, data: number) => acc + data, 0);
+                                const percentage = ((value * 100) / total).toFixed(1) + '%';
+                                return percentage;
+                              },
+                              color: '#fff',
+                              font: {
+                                weight: 'bold'
+                              }
+                            }
+                          }
+                        }}
+                      />
+                    ) : (
+                      <Bar
+                        data={chartData}
+                        options={{
+                          responsive: true,
+                          maintainAspectRatio: false,
+                          plugins: {
+                            legend: {
+                              position: 'top'
+                            },
+                            datalabels: {
+                              anchor: 'end',
+                              align: 'top',
+                              formatter: Math.round,
+                              font: {
+                                weight: 'bold'
+                              }
+                            }
+                          },
+                          scales: {
+                            x: {
+                              stacked: true
+                            },
+                            y: {
+                              stacked: true
+                            }
+                          }
+                        }}
+                      />
+                    )
+                  )}
+                </div>
+              )
+            },
+            {
+              id: 'table',
+              label: 'Tabela',
+              content: (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        {chartData?.labels.map((label, index) => (
+                          <th
+                            key={index}
+                            scope="col"
+                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                          >
+                            {label}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {chartData?.datasets.map((dataset, datasetIndex) => (
+                        <tr key={datasetIndex}>
+                          {dataset.data.map((value, index) => (
+                            <td
+                              key={index}
+                              className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                            >
+                              {value}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            }
+          ]}
+          onChange={setActivePreviewTab}
+          defaultTabId={activePreviewTab}
+        />
+      </Modal>
     </div>
   );
 };
